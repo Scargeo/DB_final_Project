@@ -25,6 +25,17 @@ app.get('/', (req, res) => {
             users: '/api/users',
             health: '/health',
             dbTest: '/db-test'
+        },
+        features: {
+            mergeConflictDetection: true,
+            optimisticLocking: true,
+            versionControl: true,
+            conflictResolution: ['optimistic-locking', 'version-mismatch', 'manual-required']
+        },
+        mergeProperties: {
+            supported: true,
+            conflictPrevention: 'enabled',
+            versionTracking: 'enabled'
         }
     });
 });

@@ -111,10 +111,69 @@ http://localhost:3000
 
 #### Users
 - `GET /api/users` - Get all users
-- `GET /api/users/:id` - Get user by ID
+- `GET /api/users/:id` - Get user by ID  
+- `GET /api/users/:id/conflicts` - Check for merge conflicts
 - `POST /api/users` - Create new user
-- `PUT /api/users/:id` - Update user
+- `PUT /api/users/:id` - Update user (with conflict detection)
 - `DELETE /api/users/:id` - Delete user
+
+## Merge Conflict Detection
+
+This application implements advanced merge conflict detection and resolution features:
+
+### Features
+- **Optimistic Locking**: Prevents lost updates using version control
+- **Version Tracking**: Each record includes a version number and last modified timestamp
+- **Conflict Detection**: Automatic detection of concurrent update conflicts
+- **Merge Properties**: All API responses include merge-related metadata
+
+### Version Control
+Each user record includes:
+- `version`: Incremented on each update
+- `last_modified`: Timestamp of last modification
+- `created_at`: Creation timestamp
+
+### Conflict Prevention
+To prevent merge conflicts when updating users:
+
+1. **Get current user data** including version:
+```bash
+GET /api/users/1
+```
+
+2. **Update with version check**:
+```bash
+PUT /api/users/1
+{
+  "username": "newname",
+  "email": "new@email.com",
+  "version": 2
+}
+```
+
+3. **Handle conflict responses** (HTTP 409):
+```json
+{
+  "success": false,
+  "error": "Merge conflict detected",
+  "conflictDetails": {
+    "currentVersion": 3,
+    "expectedVersion": 2,
+    "currentData": { ... }
+  },
+  "mergeProperties": {
+    "canMerge": false,
+    "conflictResolution": "manual-required"
+  }
+}
+```
+
+### Merge Properties
+All API responses include `mergeProperties` with:
+- `version`: Current record version
+- `lastModified`: Last modification timestamp
+- `canMerge`: Whether merge operations are safe
+- `conflictResolution`: Type of conflict resolution applied
 
 ### Example API Usage
 

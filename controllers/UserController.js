@@ -8,7 +8,12 @@ class UserController {
             res.json({
                 success: true,
                 data: users,
-                count: users.length
+                count: users.length,
+                mergeProperties: {
+                    canMerge: true,
+                    conflictResolution: 'last-write-wins',
+                    versionControl: 'enabled'
+                }
             });
         } catch (error) {
             res.status(500).json({
@@ -34,7 +39,13 @@ class UserController {
 
             res.json({
                 success: true,
-                data: user
+                data: user,
+                mergeProperties: {
+                    version: user.version,
+                    lastModified: user.last_modified,
+                    canMerge: true,
+                    conflictResolution: 'optimistic-locking'
+                }
             });
         } catch (error) {
             res.status(500).json({
@@ -63,7 +74,13 @@ class UserController {
             res.status(201).json({
                 success: true,
                 data: newUser,
-                message: 'User created successfully'
+                message: 'User created successfully',
+                mergeProperties: {
+                    version: newUser.version,
+                    lastModified: newUser.last_modified,
+                    canMerge: true,
+                    conflictResolution: 'none-required'
+                }
             });
         } catch (error) {
             res.status(500).json({
@@ -74,11 +91,11 @@ class UserController {
         }
     }
 
-    // Update user
+    // Update user with conflict detection
     static async updateUser(req, res) {
         try {
             const { id } = req.params;
-            const { username, email } = req.body;
+            const { username, email, version } = req.body;
 
             if (!username || !email) {
                 return res.status(400).json({
@@ -87,7 +104,29 @@ class UserController {
                 });
             }
 
-            const updated = await User.update(id, { username, email });
+            // Check for merge conflicts first
+            if (version !== undefined) {
+                const conflictCheck = await User.checkMergeConflicts(id, { username, email }, version);
+                if (conflictCheck.hasConflict) {
+                    return res.status(409).json({
+                        success: false,
+                        error: 'Merge conflict detected',
+                        message: conflictCheck.reason,
+                        conflictDetails: {
+                            currentVersion: conflictCheck.currentVersion,
+                            expectedVersion: conflictCheck.expectedVersion,
+                            currentData: conflictCheck.currentData
+                        },
+                        mergeProperties: {
+                            canMerge: false,
+                            conflictResolution: 'manual-required',
+                            conflictReason: conflictCheck.reason
+                        }
+                    });
+                }
+            }
+
+            const updated = await User.update(id, { username, email }, version);
             
             if (!updated) {
                 return res.status(404).json({
@@ -100,9 +139,28 @@ class UserController {
             res.json({
                 success: true,
                 data: updatedUser,
-                message: 'User updated successfully'
+                message: 'User updated successfully',
+                mergeProperties: {
+                    version: updatedUser.version,
+                    lastModified: updatedUser.last_modified,
+                    canMerge: true,
+                    conflictResolution: 'resolved',
+                    previousVersion: version || 'unknown'
+                }
             });
         } catch (error) {
+            if (error.message.includes('Merge conflict detected')) {
+                return res.status(409).json({
+                    success: false,
+                    error: 'Merge conflict',
+                    message: error.message,
+                    mergeProperties: {
+                        canMerge: false,
+                        conflictResolution: 'version-mismatch'
+                    }
+                });
+            }
+
             res.status(500).json({
                 success: false,
                 error: 'Failed to update user',
@@ -126,12 +184,50 @@ class UserController {
 
             res.json({
                 success: true,
-                message: 'User deleted successfully'
+                message: 'User deleted successfully',
+                mergeProperties: {
+                    canMerge: true,
+                    conflictResolution: 'none-required',
+                    operation: 'delete'
+                }
             });
         } catch (error) {
             res.status(500).json({
                 success: false,
                 error: 'Failed to delete user',
+                message: error.message
+            });
+        }
+    }
+
+    // Check for merge conflicts
+    static async checkConflicts(req, res) {
+        try {
+            const { id } = req.params;
+            const { username, email, version } = req.query;
+            
+            if (!username || !email) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Username and email are required for conflict checking'
+                });
+            }
+
+            const conflictCheck = await User.checkMergeConflicts(
+                id, 
+                { username, email }, 
+                version ? parseInt(version) : null
+            );
+
+            res.json({
+                success: true,
+                data: conflictCheck,
+                message: conflictCheck.hasConflict ? 'Conflicts detected' : 'No conflicts found'
+            });
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                error: 'Failed to check conflicts',
                 message: error.message
             });
         }
